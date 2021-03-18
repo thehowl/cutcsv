@@ -1,6 +1,5 @@
-#include<unistd.h>
+#include<limits.h>
 #include<stdint.h>
-#include<sys/stat.h>
 #include<errno.h>
 #include<string.h>
 #include<stdlib.h>
@@ -74,7 +73,7 @@ parse_field_spec(struct flag_info* flags, char* arg) {
 		/* with a dash, we're looking at a upper number */
 		if (c == '-') {
 			/* default to max int32 */
-			fs.max = (1 << 31) - 1;
+			fs.max = INT_MAX;
 			arg = &arg[1];
 			c = arg[0];
 			if (c >= '0' && c <= '9') {
@@ -216,7 +215,7 @@ parse_flags(int32_t argc, char* argv[]) {
 /* determine whether a field should be printed based on the flags. */
 bool
 should_print_field(struct flag_info* flags, int32_t num) {
-	int i;
+	int32_t i;
 	struct field_spec curr;
 
 	for (i = 0; i < flags->field_count; i++) {
