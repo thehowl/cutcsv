@@ -10,3 +10,8 @@
 		-D <STRING> Use STRING as the output separator (in case of multiple fields).
 					Defaults to the input delimiter.
 		-v          Be verbose
+
+Installation:
+	Build script will work with gcc. There are no external dependencies.
+	Clone the repository, and run `./tool build`, then move the file to wherever
+	you want (`~/bin`, or `/usr/bin` typically.)
