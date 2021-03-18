@@ -1,4 +1,5 @@
 #include<stdio.h>
+#include<unistd.h>
 #include<stdint.h>
 #include<sys/stat.h>
 #include<errno.h>
@@ -10,13 +11,18 @@
 
 /* flag parsing ------------------------------------------------------------- */
 
+struct field_spec {
+	int32_t min;
+	int32_t max;
+};
+
 struct flag_info {
 	/* file to use */
-	int32_t  file_count;
+	size_t   file_count;
 	char**   files;
 	/* fields to print */
-	int32_t  field_count;
-	int32_t* fields;
+	size_t   field_count;
+	struct field_spec* fields;
 	/* defaults to comma */
 	char     delim;
 	bool     verbose;
@@ -47,6 +53,51 @@ With no FILE, or when FILE is -, read standard output.\n\
 	return failed_flaginfo;
 }
 
+#define verbose(...)\
+	if (flags->verbose) fprintf(stderr, __VA_ARGS__)
+
+/* parse comma-separated ranges of fields */
+bool
+parse_field_spec(struct flag_info* flags, char* arg) {
+	char c;
+	struct field_spec fs = {0, 0};
+	bool parsed_one = false;
+
+	while (arg[0] != 0) {
+		c = arg[0];
+		/* if we're looking at a number, parse it */
+		if (c >= '0' || c <= '9') {
+			fs.min = strtoul(arg, &arg, 10);
+			fs.max = fs.min;
+			c = arg[0];
+		}
+		/* with a dash, we're looking at a upper number */
+		if (c == '-') {
+			/* default to max int32 */
+			fs.max = (1 << 31) - 1;
+			arg = &arg[1];
+			c = arg[0];
+			if (c >= '0' && c <= '9') {
+				fs.max = strtoul(arg, &arg, 10);
+				c = arg[0];
+			}
+		}
+		if (c != ',' && c != 0) {
+			return false;
+		}
+		if (c == ',')
+			arg = &arg[1];
+
+		/* store */
+		flags->fields = realloc(flags->fields, flags->field_count++ * sizeof(struct field_spec));
+		flags->fields[flags->field_count-1] = fs;
+		parsed_one = true;
+		verbose("parse field spec min %d max %d\n", fs.min, fs.max);
+	}
+
+	return parsed_one;
+}
+
 struct flag_info*
 parse_flags(int32_t argc, char* argv[]) {
 	int32_t i;
@@ -57,7 +108,6 @@ parse_flags(int32_t argc, char* argv[]) {
 	int32_t current_file = 0;
 	char* flag_arg;
 	bool used_next;
-	int32_t field_num;
 	char* invalid_reason;
 
 	invalid_reason = (char*) calloc(200, 1);
@@ -107,13 +157,11 @@ parse_flags(int32_t argc, char* argv[]) {
 		switch (arg[1]) {
 		case 'f':
 			/* field flag */
-			/* TODO: make it work for more than one field */
-			field_num = atoi(flag_arg);
-			if (field_num <= 0)
-				return parse_print_usage(prog, "invalid field");
-			ret->field_count = 1;
-			ret->fields = calloc(1, sizeof(int32_t));
-			ret->fields[0] = field_num;
+			if (!parse_field_spec(ret, flag_arg)) {
+				/* TODO: convert to snprintf */
+				sprintf(invalid_reason, "invalid field spec: %s", flag_arg);
+				return parse_print_usage(prog, invalid_reason);
+			}
 			advance_arg();
 			break;
 		case 'd':
@@ -161,11 +209,13 @@ parse_flags(int32_t argc, char* argv[]) {
 
 /* determine whether a field should be printed based on the flags. */
 bool
-should_print_field(struct flag_info* flags, int num) {
+should_print_field(struct flag_info* flags, int32_t num) {
 	int i;
+	struct field_spec curr;
 
 	for (i = 0; i < flags->field_count; i++) {
-		if (flags->fields[i] == num)
+		curr = flags->fields[i];
+		if (num >= curr.min && num <= curr.max)
 			return true;
 	}
 
@@ -173,8 +223,6 @@ should_print_field(struct flag_info* flags, int num) {
 }
 
 #define BUF_SIZE 1 << 13
-#define verbose(...)\
-	if (flags->verbose) fprintf(stderr, __VA_ARGS__)
 
 int32_t
 main(int32_t argc, char* argv[]) {
