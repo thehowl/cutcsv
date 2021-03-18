@@ -1,0 +1,12 @@
+
+	./cutcsv - the csv swiss army knife (version 0.1.0)
+
+	Usage: ./cutcsv OPTION... [FILE]
+	Print selected CSV fields from each specified FILE to standard output.
+	With no FILE, or when FILE is -, read standard output.
+
+		-f <LIST>   Print the specified comma-separated list of fields or ranges (required)
+		-d <CHAR>   Use CHAR as a delimiter (defaults to ',')
+		-D <STRING> Use STRING as the output separator (in case of multiple fields).
+					Defaults to the input delimiter.
+		-v          Be verbose
