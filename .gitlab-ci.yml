@@ -1,0 +1,12 @@
+stages:
+    - test
+
+Test:
+    image: alpine:3
+    script:
+        - apk add --update --no-cache build-base python3 bash
+        - ./tool build
+        - python3 test.py
+    artifacts:
+        paths:
+            - cutcsv

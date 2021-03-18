@@ -29,7 +29,7 @@ tool() {
 	case "$cmd" in
 		build)
 			# set up flags
-			cflags="-std=c89 -pedantic"
+			cflags="-std=c99 -pedantic"
 			cflags="$cflags -O3"
 			cflags="$cflags -fno-strict-aliasing"
 			cflags="$cflags -Wno-variadic-macros -Wno-long-long -Wall"

@@ -1,4 +1,3 @@
-#include<stdio.h>
 #include<unistd.h>
 #include<stdint.h>
 #include<sys/stat.h>
@@ -6,6 +5,7 @@
 #include<string.h>
 #include<stdlib.h>
 #include<stdbool.h>
+#include<stdio.h>
 
 #define VERSION "0.1.0"
 
@@ -66,7 +66,7 @@ parse_field_spec(struct flag_info* flags, char* arg) {
 	while (arg[0] != 0) {
 		c = arg[0];
 		/* if we're looking at a number, parse it */
-		if (c >= '0' || c <= '9') {
+		if (c >= '0' && c <= '9') {
 			fs.min = strtoul(arg, &arg, 10);
 			fs.max = fs.min;
 			c = arg[0];
@@ -89,7 +89,7 @@ parse_field_spec(struct flag_info* flags, char* arg) {
 			arg = &arg[1];
 
 		/* store */
-		flags->fields = realloc(flags->fields, flags->field_count++ * sizeof(struct field_spec));
+		flags->fields = realloc(flags->fields, ++flags->field_count * sizeof(struct field_spec));
 		flags->fields[flags->field_count-1] = fs;
 		parsed_one = true;
 		verbose("parse field spec min %d max %d\n", fs.min, fs.max);
@@ -121,7 +121,7 @@ parse_flags(int32_t argc, char* argv[]) {
 		flag_arg = NULL;
 
 		if (arg == NULL || arg[0] == '\x00') {
-			sprintf(invalid_reason, "invalid argument %d: is empty string or null", i);
+			snprintf(invalid_reason, 200, "invalid argument %d: is empty string or null", i);
 			return parse_print_usage(prog, invalid_reason);
 		}
 
@@ -145,51 +145,57 @@ parse_flags(int32_t argc, char* argv[]) {
 		if (parsing_files)
 			return parse_print_usage(prog, "invalid flag while parsing files");
 
-		flag_arg = &arg[2];
-		if (*flag_arg == '\x00' && argc != i+1) {
-			flag_arg = argv[i+1];
-			used_next = true;
-		}
-
-		/* use advance_arg for when you used the argument to the flag */
-#define advance_arg() i += (used_next ? 1 : 0)
-
-		switch (arg[1]) {
-		case 'f':
-			/* field flag */
-			if (!parse_field_spec(ret, flag_arg)) {
-				/* TODO: convert to snprintf */
-				sprintf(invalid_reason, "invalid field spec: %s", flag_arg);
-				return parse_print_usage(prog, invalid_reason);
-			}
-			advance_arg();
-			break;
-		case 'd':
-			/* delim flag */
-			if (strlen(flag_arg) != 1) {
-				sprintf(invalid_reason, "invalid length for delimiter: need 1 got %ld", strlen(flag_arg));
-				return parse_print_usage(prog, invalid_reason);
+		while (*arg != 0) {
+			flag_arg = &arg[2];
+			if (*flag_arg == 0 && argc != i+1) {
+				flag_arg = argv[i+1];
+				used_next = true;
 			}
 
-			ret->delim = flag_arg[0];
-			advance_arg();
-			break;
-		case 'D':
-			/* output delimiter */
-			ret->out_delim = flag_arg;
-			advance_arg();
-			break;
-		case 'h':
-			return parse_print_usage(prog, NULL);
-		case 'v':
-			ret->verbose = true;
-			break;
-		default:
-			sprintf(invalid_reason, "unknown flag '%c'", arg[1]);
-			return parse_print_usage(prog, invalid_reason);
+			/* use advance_arg for when you used the argument to the flag */
+#define advance_arg() i += (used_next ? 1 : 0); goto break_upper_loop;
+
+			switch (arg[1]) {
+			case 'f':
+				/* field flag */
+				if (!parse_field_spec(ret, flag_arg)) {
+					snprintf(invalid_reason, 200, "invalid field spec: %s", flag_arg);
+					return parse_print_usage(prog, invalid_reason);
+				}
+				advance_arg();
+				break;
+			case 'd':
+				/* delim flag */
+				if (strlen(flag_arg) != 1) {
+					snprintf(invalid_reason, 200, "invalid length for delimiter: need 1 got %ld", strlen(flag_arg));
+					return parse_print_usage(prog, invalid_reason);
+				}
+
+				ret->delim = flag_arg[0];
+				advance_arg();
+				break;
+			case 'D':
+				/* output delimiter */
+				ret->out_delim = flag_arg;
+				advance_arg();
+				break;
+			case 'h':
+				return parse_print_usage(prog, NULL);
+			case 'v':
+				ret->verbose = true;
+				break;
+			default:
+				snprintf(invalid_reason, 200, "unknown flag '%c'", arg[1]);
+				return parse_print_usage(prog, invalid_reason);
+			}
+
+			arg = &arg[1];
 		}
+	break_upper_loop:
+		i = i; /* noop */
 	}
 
+	/* set defaults for fields */
 	if (ret->field_count == 0)
 		return parse_print_usage(prog, "no field number provided");
 	if (ret->file_count == 0) {
