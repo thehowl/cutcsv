@@ -28,6 +28,8 @@ struct flag_info {
 	/* delimiter used for when we have multiple fields.
 	 * defaults to delim */
 	char*    out_delim;
+	/* how many rows to skip from the top of the file */
+	int32_t  skip_rows;
 
 	bool should_exit;
 };
@@ -47,6 +49,8 @@ With no FILE, or when FILE is -, read standard output.\n\
 	-d <CHAR>   Use CHAR as a delimiter (defaults to ',')\n\
 	-D <STRING> Use STRING as the output separator (in case of multiple fields).\n\
 	            Defaults to the input delimiter.\n\
+	-r          Skip one row from the top of the file (header).\n\
+	-h          Show this help message.\n\
 	-v          Be verbose\n", prog, VERSION, prog);
 
 	return failed_flaginfo;
@@ -144,7 +148,7 @@ parse_flags(int32_t argc, char* argv[]) {
 		if (parsing_files)
 			return parse_print_usage(prog, "invalid flag while parsing files");
 
-		while (*arg != 0) {
+		while (arg[1] != 0) {
 			flag_arg = &arg[2];
 			if (*flag_arg == 0 && argc != i+1) {
 				flag_arg = argv[i+1];
@@ -178,11 +182,13 @@ parse_flags(int32_t argc, char* argv[]) {
 				ret->out_delim = flag_arg;
 				advance_arg();
 				break;
-			case 'h':
-				return parse_print_usage(prog, NULL);
+			case 'h': return parse_print_usage(prog, NULL);
 			case 'v':
-				ret->verbose = true;
-				break;
+				  ret->verbose = true;
+				  break;
+			case 'r':
+				  ret->skip_rows = 1;
+				  break;
 			default:
 				snprintf(invalid_reason, 200, "unknown flag '%c'", arg[1]);
 				return parse_print_usage(prog, invalid_reason);
@@ -217,6 +223,10 @@ bool
 should_print_field(struct flag_info* flags, int32_t num) {
 	int32_t i;
 	struct field_spec curr;
+
+	// Still have rows to skip
+	if (flags->skip_rows > 0)
+		return false;
 
 	for (i = 0; i < flags->field_count; i++) {
 		curr = flags->fields[i];
@@ -333,6 +343,8 @@ main(int32_t argc, char* argv[]) {
 						fputc('\n', stdout);
 					field_num = 1;
 					num_printed = 0;
+					if (flags->skip_rows > 0)
+						flags->skip_rows--;
 				} else {
 					field_num++;
 				}
