@@ -1,14 +1,19 @@
 
-	./cutcsv - the csv swiss army knife (version 0.1.0)
+	cutcsv - the csv swiss army knife (version 0.2.0)
 
-	Usage: ./cutcsv OPTION... [FILE]
+	Usage: cutcsv OPTION... [FILE]
 	Print selected CSV fields from each specified FILE to standard output.
+	Select one or more fields using -c and -f. At least one field must be selected.
 	With no FILE, or when FILE is -, read standard output.
 
-		-f <LIST>   Print the specified comma-separated list of fields or ranges (required)
+		-f <LIST>   Print the specified comma-separated list of fields or ranges
+		-c <COLUMN> Select fields whose column name (value of the first line)
+		            matches COLUMN.
 		-d <CHAR>   Use CHAR as a delimiter (defaults to ',')
 		-D <STRING> Use STRING as the output separator (in case of multiple fields).
-					Defaults to the input delimiter.
+		            Defaults to the input delimiter.
+		-r          Skip one row from the top of the file (header).
+		-h          Show this help message.
 		-v          Be verbose
 
 Installation:
