@@ -42,7 +42,7 @@ parse_print_usage(char* prog, char* reason) {
 	if (reason != NULL)
 		fprintf(stderr, "%s: %s\n\n", prog, reason);
 	fprintf(stderr, "%s - the csv swiss army knife (version %s)\n\n\
-Usage: %s OPTION... [FILE]\n\
+Usage: %s OPTION... [FILE...]\n\
 Print selected CSV fields from each specified FILE to standard output.\n\
 Select one or more fields using -c and -f. At least one field must be selected.\n\
 With no FILE, or when FILE is -, read standard output.\n\

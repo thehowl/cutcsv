@@ -1,7 +1,7 @@
 
 	cutcsv - the csv swiss army knife (version 0.2.0)
 
-	Usage: cutcsv OPTION... [FILE]
+	Usage: cutcsv OPTION... [FILE...]
 	Print selected CSV fields from each specified FILE to standard output.
 	Select one or more fields using -c and -f. At least one field must be selected.
 	With no FILE, or when FILE is -, read standard output.
