@@ -29,6 +29,7 @@ def file_put(filename, data):
         f.write(data)
 
 def run_tests(is2x):
+    global exit_code
     for k in test_cases.keys():
         v = test_cases[k]
         args = ["./cutcsv"]
