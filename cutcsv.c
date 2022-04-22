@@ -226,7 +226,13 @@ parse_flags(int32_t argc, char* argv[]) {
 		ret->files[0] = "/dev/stdin";
 	}
 	if (ret->out_delim == NULL) {
-		ret->out_delim = calloc(2, sizeof(char));
+		/* The reasoning of this is beyond me.
+		 * This works fine on GCC. On musl, however, and thus in the testing
+		 * environment, it will result in a SIGSEGV if we use a value of 2
+		 * (which would be the most logical). It seems that musl has a
+		 * minimum limit of how much to calloc? Don't know what other
+		 * explanation to make out of this, honestly. */
+		ret->out_delim = calloc(16, sizeof(char));
 		ret->out_delim[0] = ret->delim;
 	}
 

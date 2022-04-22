@@ -32,7 +32,7 @@ def file_put(filename, data):
 def run_tests(is2x):
     global exit_code
     tmpdir = os.getenv("TMPDIR")
-    if tmpdir == "":
+    if tmpdir == "" or tmpdir is None:
         tmpdir = "/tmp"
     for k in test_cases.keys():
         v = test_cases[k]
