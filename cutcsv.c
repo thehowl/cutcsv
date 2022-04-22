@@ -187,6 +187,10 @@ parse_flags(int32_t argc, char* argv[]) {
 					snprintf(invalid_reason, 200, "invalid length for delimiter: need 1 got %ld", strlen(flag_arg));
 					return parse_print_usage(prog, invalid_reason);
 				}
+				if (flag_arg[0] == '\n' || flag_arg[0] == '\r' || flag_arg[0] == '"') {
+					snprintf(invalid_reason, 200, "invalid value for delimiter");
+					return parse_print_usage(prog, invalid_reason);
+				}
 				ret->delim = flag_arg[0];
 				advance_arg();
 				break;
