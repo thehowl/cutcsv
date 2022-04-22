@@ -6,8 +6,7 @@ Test:
     script:
         - apk add --update --no-cache build-base python3 bash
         - ./tool build
-        - mkdir -p /tmp
-        - python3 test.py
+        - mkdir -p ./tmp && TMPDIR=./tmp python3 test.py
     artifacts:
         paths:
             - cutcsv

@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import os
 
 test_cases = {
     "base":	        [["-f", "1"], b"a,b,c\n", b"a\n"],
@@ -30,14 +31,18 @@ def file_put(filename, data):
 
 def run_tests(is2x):
     global exit_code
+    tmpdir = os.getenv("TMPDIR")
+    if tmpdir == "":
+        tmpdir = "/tmp"
     for k in test_cases.keys():
         v = test_cases[k]
         args = ["./cutcsv"]
         args.extend(v[0])
         if is2x:
-            file_put('/tmp/cutcsv-a', v[1])
-            file_put('/tmp/cutcsv-b', v[1])
-            args.extend(['/tmp/cutcsv-a', '/tmp/cutcsv-b'])
+            file_put(tmpdir + '/cutcsv-a', v[1])
+            file_put(tmpdir + '/cutcsv-b', v[1])
+            args.extend([tmpdir + '/cutcsv-a', tmpdir + '/cutcsv-b'])
+        #print(" ".join(args))
         call = subprocess.run(args, input=None if is2x else v[1], capture_output=True)
         k += ":"
         if call.returncode != 0:
