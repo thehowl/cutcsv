@@ -261,6 +261,7 @@ reset_extra_field_specs(struct flag_info* flags) {
 		if (flags->fields[i].col_name != NULL && flags->fields[i].min >= 0) {
 			/* this is the first extra field. delete from here. */
 			flags->field_count = i;
+			return;
 		}
 	}
 }
@@ -284,6 +285,17 @@ should_print_field(struct flag_info* flags, int32_t num, int32_t row_num) {
 	}
 
 	return false;
+}
+
+void
+dump_fields(struct flag_info* flags) {
+	int i;
+	struct field_spec* fs;
+
+	for (i = 0; i < flags->field_count; i++) {
+		fs = &flags->fields[i];
+		verbose("- min: %d; max: %d; col: %s\n", fs->min, fs->max, fs->col_name);
+	}
 }
 
 #define BUF_SIZE 1 << 13
@@ -318,6 +330,8 @@ main(int32_t argc, char* argv[]) {
 		return 1;
 
 	verbose("flags parsed\n");
+	verbose("field specs (%ld):\n", flags->field_count);
+	dump_fields(flags);
 
 	/* allocate buffers */
 	buf = malloc(BUF_SIZE);
@@ -325,7 +339,6 @@ main(int32_t argc, char* argv[]) {
 
 	for (i = 0; i < flags->file_count; i++) {
 		in_quotes = false;
-		should_print = should_print_field(flags, 1, 1);
 		read = 0;
 		pos = 0;
 		field_num = 1;
@@ -337,6 +350,7 @@ main(int32_t argc, char* argv[]) {
 			 * as they will need to be rematched in this second file. */
 			reset_extra_field_specs(flags);
 		}
+		should_print = should_print_field(flags, 1, 1);
 
 		verbose("opening file %s\n", flags->files[i]);
 
