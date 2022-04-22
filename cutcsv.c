@@ -6,7 +6,7 @@
 #include<stdbool.h>
 #include<stdio.h>
 
-#define VERSION "0.2.0"
+#define VERSION "0.2.1"
 
 /* flag parsing ------------------------------------------------------------- */
 
