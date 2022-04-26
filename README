@@ -1,4 +1,4 @@
-cutcsv - the csv swiss army knife (version 0.2.2)
+cutcsv - the csv swiss army knife (version 0.2.3)
 
 Usage: cutcsv OPTION... [FILE...]
 Print selected CSV fields from each specified FILE to standard output.

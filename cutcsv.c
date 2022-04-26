@@ -6,7 +6,7 @@
 #include<stdbool.h>
 #include<stdio.h>
 
-#define VERSION "0.2.2"
+#define VERSION "0.2.3"
 
 /* flag parsing ------------------------------------------------------------- */
 
@@ -156,7 +156,6 @@ parse_flags(int32_t argc, char* argv[]) {
 			if (strlen(arg) == 1 && arg[0] == '-') {
 				arg = "/dev/stdin";
 			}
-			fprintf(stderr, "what? %d %s %ld\n", current_file, arg, strlen(arg));
 			ret->files[current_file] = calloc(strlen(arg)+1, sizeof(char));
 			memcpy(ret->files[current_file], arg, strlen(arg));
 			current_file++;
