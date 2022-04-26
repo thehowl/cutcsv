@@ -6,7 +6,7 @@
 #include<stdbool.h>
 #include<stdio.h>
 
-#define VERSION "0.2.1"
+#define VERSION "0.2.2"
 
 /* flag parsing ------------------------------------------------------------- */
 
@@ -44,8 +44,8 @@ parse_print_usage(char* prog, char* reason) {
 	fprintf(stderr, "%s - the csv swiss army knife (version %s)\n\n\
 Usage: %s OPTION... [FILE...]\n\
 Print selected CSV fields from each specified FILE to standard output.\n\
-Select one or more fields using -c and -f. At least one field must be selected.\n\
-With no FILE, or when FILE is -, read standard output.\n\
+Select one or more fields using -c and/or -f. At least one must be selected.\n\
+With no FILE, or when FILE is -, read standard input.\n\
 \n\
 	-f <LIST>   Print the specified comma-separated list of fields or ranges\n\
 	-c <COLUMN> Select fields whose column name (value of the first line)\n\
@@ -55,7 +55,21 @@ With no FILE, or when FILE is -, read standard output.\n\
 	            Defaults to the input delimiter.\n\
 	-r          Skip one row from the top of the file (header).\n\
 	-h          Show this help message.\n\
-	-v          Be verbose\n", prog, VERSION, prog);
+	-v          Be verbose\n\
+\n\
+Each LIST is made up of one range, or many ranges separated by commas,\n\
+in a similar fashion to the UNIX 'cut' program.\n\
+Selected input is written in the same order that it is read, and is written\n\
+exactly once. Each range is one of:\n\
+\n\
+  N     N'th field, counted from 1\n\
+  N-    from N'th field, to end of line\n\
+  N-M   from N'th to M'th (included) field\n\
+  -M    from first to M'th (included) field\n\
+\n\
+https://zxq.co/rosa/cutcsv\n\
+Copyright (c) 2021-2022 Morgan Bazalgette <the@howl.moe> under the MIT license\n\
+", prog, VERSION, prog);
 
 	return failed_flaginfo;
 }
@@ -137,11 +151,12 @@ parse_flags(int32_t argc, char* argv[]) {
 			if (!parsing_files) {
 				parsing_files = true;
 				ret->file_count = argc - i;
-				ret->files = calloc(1, sizeof(char*));
+				ret->files = calloc(ret->file_count, sizeof(char*));
 			}
 			if (strlen(arg) == 1 && arg[0] == '-') {
 				arg = "/dev/stdin";
 			}
+			fprintf(stderr, "what? %d %s %ld\n", current_file, arg, strlen(arg));
 			ret->files[current_file] = calloc(strlen(arg)+1, sizeof(char));
 			memcpy(ret->files[current_file], arg, strlen(arg));
 			current_file++;
@@ -341,7 +356,8 @@ main(int32_t argc, char* argv[]) {
 
 	verbose("flags parsed\n");
 	verbose("field specs (%ld):\n", flags->field_count);
-	dump_fields(flags);
+	if (flags->verbose)
+		dump_fields(flags);
 
 	/* allocate buffers */
 	buf = malloc(BUF_SIZE);

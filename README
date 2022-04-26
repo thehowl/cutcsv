@@ -1,20 +1,32 @@
+cutcsv - the csv swiss army knife (version 0.2.2)
 
-	cutcsv - the csv swiss army knife (version 0.2.1)
+Usage: cutcsv OPTION... [FILE...]
+Print selected CSV fields from each specified FILE to standard output.
+Select one or more fields using -c and/or -f. At least one must be selected.
+With no FILE, or when FILE is -, read standard input.
 
-	Usage: cutcsv OPTION... [FILE...]
-	Print selected CSV fields from each specified FILE to standard output.
-	Select one or more fields using -c and -f. At least one field must be selected.
-	With no FILE, or when FILE is -, read standard output.
+        -f <LIST>   Print the specified comma-separated list of fields or ranges
+        -c <COLUMN> Select fields whose column name (value of the first line)
+                    matches COLUMN.
+        -d <CHAR>   Use CHAR as a delimiter (defaults to ',')
+        -D <STRING> Use STRING as the output separator (in case of multiple fields).
+                    Defaults to the input delimiter.
+        -r          Skip one row from the top of the file (header).
+        -h          Show this help message.
+        -v          Be verbose
 
-		-f <LIST>   Print the specified comma-separated list of fields or ranges
-		-c <COLUMN> Select fields whose column name (value of the first line)
-		            matches COLUMN.
-		-d <CHAR>   Use CHAR as a delimiter (defaults to ',')
-		-D <STRING> Use STRING as the output separator (in case of multiple fields).
-		            Defaults to the input delimiter.
-		-r          Skip one row from the top of the file (header).
-		-h          Show this help message.
-		-v          Be verbose
+Each LIST is made up of one range, or many ranges separated by commas,
+in a similar fashion to the UNIX 'cut' program.
+Selected input is written in the same order that it is read, and is written
+exactly once. Each range is one of:
+
+  N     N'th field, counted from 1
+  N-    from N'th field, to end of line
+  N-M   from N'th to M'th (included) field
+  -M    from first to M'th (included) field
+
+https://zxq.co/rosa/cutcsv
+Copyright (c) 2021-2022 Morgan Bazalgette <the@howl.moe> under the MIT license
 
 Installation:
 	Build script will work with gcc. There are no external dependencies.
