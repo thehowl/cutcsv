@@ -21,6 +21,7 @@ test_cases = {
     "colr":             [["-rcname"], b"a,b,name,c\na,b,adolfo,c\n", b"adolfo\n"],
     "col":              [["-cname"], b"a,b,name,c\na,b,adolfo,c\n", b"name\nadolfo\n"],
     "col_field":        [["-f1", "-ca", "-cb"], b"1,2,3,a,b,c\n", b"1,a,b\n"],
+    "strcmp":           [["-calberto", "-cb", "-ccane"], b"a,bari,cane\n1,2,3\n", b"cane\n3\n"]
 }
 
 exit_code = 0

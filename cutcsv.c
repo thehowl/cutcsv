@@ -6,7 +6,7 @@
 #include<stdbool.h>
 #include<stdio.h>
 
-#define VERSION "0.2.3"
+#define VERSION "0.2.4"
 
 /* flag parsing ------------------------------------------------------------- */
 
@@ -264,7 +264,8 @@ check_column_match(char* fieldbuf, int32_t fieldbuf_pos, struct flag_info* flags
 		fs = flags->fields[i];
 		if (fs.col_name == NULL)
 			continue;
-		if (strncmp(fieldbuf, fs.col_name, fieldbuf_pos) == 0) {
+		fieldbuf[fieldbuf_pos] = 0;
+		if (strcmp(fieldbuf, fs.col_name) == 0) {
 			/* we add a new fieldspec for each field_num that matches. while this
 			 * may seem inefficient, it is simple and it allows us to reset the "extra"
 			 * fields when changing files. different files may have different ordering
