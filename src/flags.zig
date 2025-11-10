@@ -1,13 +1,15 @@
 const std = @import("std");
 const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
+const expectEqualStrings = std.testing.expectEqualStrings;
 
 /// FieldSpec is a specification of a field, or a range of fields, that should be printed in the result.
 pub const FieldSpec = union(enum) {
     range: struct {
-        min: ?u64,
-        max: ?u64,
+        min: ?u64 = null,
+        max: ?u64 = null,
     },
-    column: []u8,
+    column: []const u8,
 };
 
 /// Flags specifies the set of flags used by cutcsv.
@@ -16,28 +18,30 @@ pub const Flags = struct {
     files: std.ArrayList([]const u8),
 
     // fields to be printed from the files.
-    fields: std.ArrayList([]FieldSpec),
+    fields: std.ArrayList(FieldSpec),
 
     // csv field delimiter.
     delim: u8 = ',',
 
     // delimiter to be used for output;
     // will default to delim if not specified.
-    outDelim: ?[:0]const u8 = null,
+    outDelim: ?[]const u8 = null,
 
     // use verbose ouput.
     verbose: bool = false,
 
     // rows to skip from the top of the file.
-    skipRows: u8 = 0, // actually 0 or 1, increase if necessary
+    skipRows: u8 = 0, // actually 0 or 1, increase to u64 if expanding feature
 
     pub fn init(allocator: std.mem.Allocator) std.mem.Allocator.Error!Flags {
         return .{
             .files = try std.ArrayList([]const u8).initCapacity(allocator, 16),
-            .fields = try std.ArrayList([]FieldSpec).initCapacity(allocator, 16),
+            .fields = try std.ArrayList(FieldSpec).initCapacity(allocator, 16),
         };
     }
     pub fn deinit(self: *Flags, allocator: std.mem.Allocator) void {
+        for (self.files.items) |file| allocator.free(file);
+        for (self.fields.items) |field| if (field == .column) allocator.free(field.column);
         self.files.deinit(allocator);
         self.fields.deinit(allocator);
     }
@@ -73,7 +77,7 @@ pub fn writeUsage(writer: *std.Io.Writer, name: []const u8, version: []const u8)
         \\  -M    from first to M'th (included) field
         \\
         \\https://zxq.co/rosa/cutcsv
-        \\Copyright (c) 2021-2024 Morgan Bazalgette <the@howl.moe> under the MIT license
+        \\Copyright (c) 2021-2025 Morgan Bazalgette <the@howl.moe> under the MIT license
         \\
     ;
     return writer.print(usageFormat, .{ name, version });
@@ -95,38 +99,85 @@ pub const ParseArgsError = union(enum) {
     Empty: struct {
         position: u32,
     },
+    NoFieldSpecProvided,
     InvalidFlag: u8,
     FlagAfterFiles,
     HelpWanted,
     NoFlagArg: u8,
+    InvalidDelimLength: []const u8,
+    InvalidDelim: u8,
+    InvalidFieldSpec: []const u8,
 
     pub fn format(self: ParseArgsError, writer: anytype) !void {
-        return switch (self) {
-            .Empty => |emptyErr| writer.print("could not parse argument {d}: is empty", emptyErr.position),
-            .FlagAfterFiles => writer.print("cannot pass a flag after passing files"),
-            .InvalidFlag => |char| writer.print("unknown flag: -{c}", char),
-        };
+        switch (self) {
+            .Empty => |emptyErr| try writer.print("could not parse argument {d}: is empty\n", .{emptyErr.position}),
+            .NoFieldSpecProvided => try writer.print("no field number or column provided\n", .{}),
+            .InvalidFlag => |char| try writer.print("unknown flag: -{c}\n", .{char}),
+            .FlagAfterFiles => try writer.print("cannot pass a flag after passing files\n", .{}),
+            .HelpWanted => {}, // Ignore
+            .NoFlagArg => try writer.print("missing argument after flag\n", .{}),
+            .InvalidDelimLength => |delim| try writer.print("invalid delimiter: {s}\n", .{delim}),
+            .InvalidDelim => |char| try writer.print("invalid delimiter: {c}\n", .{char}),
+            .InvalidFieldSpec => |fs| try writer.print("invalid field spec: {s}\n", .{fs}),
+        }
     }
 };
 
-const flagArgError = error{
-    NoFlagArg,
-};
-
-fn flagArg(flagData: *[:0]const u8, argsIter: anytype) flagArgError![:0]const u8 {
+fn flagArg(flagData: *[:0]const u8, argsIter: anytype) error{NoFlagArg}![]const u8 {
     if (flagData.*.len > 1) {
         const ret = flagData.*[1..];
         flagData.* = "";
         return ret;
     }
+    flagData.* = flagData.*[1..];
     const ret = argsIter.next();
     if (ret == null) {
-        return flagArgError.NoFlagArg;
+        return error.NoFlagArg;
     }
     return ret.?;
 }
 
+fn parseFieldSpec(fs: *[]const u8) error{InvalidFieldSpec}!FieldSpec {
+    // TODO: DRY on the return
+    var parsed: FieldSpec = .{ .range = .{} };
+    var foundDash: bool = false;
+    for (fs.*, 0..) |char, i| {
+        switch (char) {
+            '0'...'9' => {
+                if (foundDash) {
+                    parsed.range.max = (parsed.range.max orelse 0) * 10 + (char - '0');
+                } else {
+                    parsed.range.min = (parsed.range.min orelse 0) * 10 + (char - '0');
+                }
+            },
+            '-' => {
+                if (foundDash) return error.InvalidFieldSpec;
+                foundDash = true;
+            },
+            ',' => {
+                if ((parsed.range.max == null and parsed.range.min == null) or
+                    (i + 1 == fs.len)) return error.InvalidFieldSpec;
+                fs.* = fs.*[i + 1 ..];
+                if (!foundDash and parsed.range.min != null) {
+                    parsed.range.max = parsed.range.min;
+                }
+                return parsed;
+            },
+            else => return error.InvalidFieldSpec,
+        }
+    }
+    if (parsed.range.max == null and parsed.range.min == null) return error.InvalidFieldSpec;
+    fs.* = "";
+    if (!foundDash and parsed.range.min != null) {
+        parsed.range.max = parsed.range.min;
+    }
+    return parsed;
+}
+
 pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
+    if (!args.skip()) {
+        return .{ .Err = .NoFieldSpecProvided };
+    }
     var pos: u32 = 0;
     var flags: Flags = try Flags.init(alloc);
     var success = false;
@@ -148,9 +199,9 @@ pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
         if (arg[0] != '-' or arg.len == 1) {
             parsingFiles = true;
             if (arg.len == 1) {
-                try flags.files.append(alloc, "/dev/stdin");
+                try flags.files.append(alloc, try alloc.dupe(u8, "/dev/stdin"));
             } else {
-                try flags.files.append(alloc, arg);
+                try flags.files.append(alloc, try alloc.dupe(u8, arg));
             }
             continue;
         }
@@ -163,20 +214,63 @@ pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
         var toConsume = arg[1..];
         while (toConsume.len > 0) {
             switch (toConsume[0]) {
-                'f' => {},
-                'c' => {},
-                'd' => {},
-                'D' => {
-                    flags.outDelim = try flagArg(&toConsume, args);
+                'f' => {
+                    var fieldSpecs = flagArg(&toConsume, args) catch |err| switch (err) {
+                        error.NoFlagArg => return .{ .Err = .{ .NoFlagArg = 'f' } },
+                    };
+                    while (fieldSpecs.len > 0) {
+                        const fs = parseFieldSpec(&fieldSpecs) catch |err| switch (err) {
+                            error.InvalidFieldSpec => return .{ .Err = .{ .InvalidFieldSpec = fieldSpecs } },
+                        };
+                        try flags.fields.append(alloc, fs);
+                    }
+                },
+                'c' => {
+                    const columnName = flagArg(&toConsume, args) catch |err| switch (err) {
+                        error.NoFlagArg => return .{ .Err = .{ .NoFlagArg = 'f' } },
+                    };
+                    try flags.fields.append(alloc, FieldSpec{
+                        .column = try alloc.dupe(u8, columnName),
+                    });
+                },
+                'd' => {
+                    const delim = flagArg(&toConsume, args) catch |err| switch (err) {
+                        error.NoFlagArg => return .{ .Err = .{ .NoFlagArg = 'd' } },
+                    };
+                    if (delim.len != 1) {
+                        return .{ .Err = .{ .InvalidDelimLength = delim } };
+                    }
+                    switch (delim[0]) {
+                        '\n', '\r', '"' => return .{ .Err = .{ .InvalidDelim = delim[0] } },
+                        else => {},
+                    }
+                    flags.delim = delim[0];
+                },
+                'D' => flags.outDelim = flagArg(&toConsume, args) catch |err| switch (err) {
+                    error.NoFlagArg => return .{ .Err = .{ .NoFlagArg = 'D' } },
                 },
 
                 'h' => return .{ .Err = .HelpWanted },
-                'v' => flags.verbose = true,
-                'r' => flags.skipRows = 1,
-                else => {},
+                'v' => {
+                    flags.verbose = true;
+                    toConsume = toConsume[1..];
+                },
+                'r' => {
+                    flags.skipRows = 1;
+                    toConsume = toConsume[1..];
+                },
+                else => return .{ .Err = .{ .InvalidFlag = toConsume[0] } },
             }
         }
     }
+
+    if (pos == 0) {
+        return .{ .Err = .NoFieldSpecProvided };
+    }
+    if (flags.files.items.len == 0) {
+        try flags.files.append(alloc, try alloc.dupe(u8, "/dev/stdin"));
+    }
+
     flags.verbose = false;
     success = true;
     return .{ .Ok = flags };
@@ -184,41 +278,76 @@ pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
 
 const testArgIterator = std.process.ArgIteratorGeneral(.{ .single_quotes = true });
 
-test "empty argument" {
+fn testParseArgs(input: []const u8) !ParseArgsResult {
     const alloc = std.testing.allocator;
     var argIterator = try testArgIterator.init(
         alloc,
-        "''",
+        input,
     );
     defer argIterator.deinit();
-    var result = try parseArgs(alloc, &argIterator);
-    defer result.deinit(alloc);
-    try expect(result.Err.Empty.position == 0);
+    return parseArgs(alloc, &argIterator);
 }
 
-test "empty argument in second position" {
-    const alloc = std.testing.allocator;
-    var argIterator = try testArgIterator.init(
-        alloc,
-        "sas ''",
-    );
-    defer argIterator.deinit();
-    var result = try parseArgs(alloc, &argIterator);
-    defer result.deinit(alloc);
-    try std.testing.expectEqual(1, result.Err.Empty.position);
+test "field spec" {
+    var result = try testParseArgs("-f1-3");
+    defer result.deinit(std.testing.allocator);
+    try expect(result == .Ok);
+
+    var flags = try Flags.init(std.testing.allocator);
+    defer flags.deinit(std.testing.allocator);
+    try flags.fields.append(std.testing.allocator, FieldSpec{ .range = .{ .min = 1, .max = 3 } });
+
+    try std.testing.expectEqualDeep(ParseArgsResult{
+        .Ok = flags,
+    }, result);
+}
+
+test "column field spec" {
+    var result = try testParseArgs("-chello");
+    defer result.deinit(std.testing.allocator);
+    try expect(result == .Ok);
+
+    var flags = try Flags.init(std.testing.allocator);
+    defer flags.deinit(std.testing.allocator);
+    try flags.fields.append(std.testing.allocator, FieldSpec{
+        .column = try std.testing.allocator.dupe(u8, "hello"),
+    });
+
+    try std.testing.expectEqualDeep(ParseArgsResult{
+        .Ok = flags,
+    }, result);
 }
 
 test "with files" {
-    const alloc = std.testing.allocator;
-    var argIterator = try testArgIterator.init(
-        alloc,
-        "one two three",
-    );
-    defer argIterator.deinit();
-    var result = try parseArgs(alloc, &argIterator);
-    defer result.deinit(alloc);
-    try std.testing.expectEqual(3, result.Ok.files.items.len);
-    try std.testing.expectEqualStrings(result.Ok.files.items[0], "one");
-    try std.testing.expectEqualStrings(result.Ok.files.items[1], "two");
-    try std.testing.expectEqualStrings(result.Ok.files.items[2], "three");
+    var result = try testParseArgs("one two three");
+    defer result.deinit(std.testing.allocator);
+    try expect(result == .Ok);
+
+    const alloc: std.mem.Allocator = std.testing.allocator;
+
+    var flags = try Flags.init(alloc);
+    defer flags.deinit(alloc);
+    try flags.files.appendSlice(alloc, &[_][]u8{
+        try alloc.dupe(u8, "one"),
+        try alloc.dupe(u8, "two"),
+        try alloc.dupe(u8, "three"),
+    });
+}
+
+test "error: help" {
+    var result = try testParseArgs("-h");
+    defer result.deinit(std.testing.allocator);
+    try expect(result.Err == .HelpWanted);
+}
+
+test "error: empty argument" {
+    var result = try testParseArgs("''");
+    defer result.deinit(std.testing.allocator);
+    try expect(result.Err.Empty.position == 0);
+}
+
+test "error: empty argument in second position" {
+    var result = try testParseArgs("sas ''");
+    defer result.deinit(std.testing.allocator);
+    try expectEqual(1, result.Err.Empty.position);
 }

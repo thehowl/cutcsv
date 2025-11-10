@@ -37,7 +37,7 @@ def run_tests(is2x):
         tmpdir = "/tmp"
     for k in test_cases.keys():
         v = test_cases[k]
-        args = ["./cutcsv"]
+        args = ["./zig-out/bin/cutcsv"]
         args.extend(v[0])
         if is2x:
             file_put(tmpdir + '/cutcsv-a', v[1])
