@@ -32,10 +32,6 @@ pub fn main() !u8 {
     return 0;
 }
 
-const parseState = struct {
-    lastByte: ?u8 = null,
-};
-
 const readIter = struct {
     buf: [2048]u8 = undefined,
     pos: u16 = 0,
@@ -61,12 +57,19 @@ const readIter = struct {
 };
 
 const stateType = struct {
-    lastByte: ?u8 = null,
+    fsm: enum {
+        // ExpectField ---> Field        ---> ExpectField
+        //             \
+        //              --> QuotedField  ---> ExpectQuoteDelim ---> (QuotedField|ExpectField)
+        ExpectField, // Beginning of field state
+        QuotedField,
+        Field,
+        ExpectQuoteDelim,
+    } = .ExpectField,
     fieldBuf: std.ArrayList(u8),
     fieldBitset: std.DynamicBitSetUnmanaged,
     colNum: u64 = 1,
     rowNum: u64 = 1,
-    inQuotes: bool = false,
     printedInRow: bool = false,
 
     fn deinit(self: *stateType, gpa: std.mem.Allocator) void {
@@ -90,7 +93,7 @@ const stateType = struct {
         const shouldPrint = state.rowNum > fl.skipRows and state.fieldBitset.isSet(bitPos);
         if (shouldPrint) {
             if (state.printedInRow) {
-                _ = try sw.write(fl.outDelim orelse &[_]u8{fl.delim});
+                _ = try sw.write(fl.outDelim.?);
             } else {
                 state.printedInRow = true;
             }
@@ -106,8 +109,11 @@ const stateType = struct {
         } else {
             state.colNum += 1;
         }
-        state.lastByte = null;
     }
+};
+
+const executeFileError = error{
+    InvalidCSV,
 };
 
 fn executeFile(gpa: std.mem.Allocator, sw: *std.io.Writer, fl: flags.Flags, filename: []const u8) !void {
@@ -121,37 +127,42 @@ fn executeFile(gpa: std.mem.Allocator, sw: *std.io.Writer, fl: flags.Flags, file
     defer state.deinit(gpa);
 
     while (try ri.next()) |byte| {
-        if (byte == '\r') continue; // TODO
-        if (byte == '"') {
-            if (!state.inQuotes and state.lastByte == '"') {
-                // double quotes; was "mistakenly" set to inQuotes = false.
-                state.inQuotes = true;
-                try state.fieldBuf.append(gpa, '"');
-            } else if (state.inQuotes) {
-                state.inQuotes = false;
-                state.lastByte = '"';
-            } else if (state.lastByte != null and
-                state.lastByte.? != '\n' and
-                state.lastByte.? != fl.delim)
-            {
-                // not at boundaries of a field, likely literal "
-                try state.fieldBuf.append(gpa, '"');
-                state.lastByte = '"';
-            } else {
-                state.inQuotes = true;
-                state.lastByte = null;
-            }
-            continue;
+        switch (state.fsm) {
+            .ExpectField => {
+                if (byte == '"') {
+                    state.fsm = .QuotedField;
+                } else {
+                    try state.fieldBuf.append(gpa, byte);
+                    state.fsm = .Field;
+                }
+            },
+            .Field => {
+                if (byte == fl.delim or byte == '\n') {
+                    try state.printField(gpa, fl, sw, byte == '\n');
+                    state.fsm = .ExpectField;
+                } else {
+                    @branchHint(.likely);
+                    try state.fieldBuf.append(gpa, byte);
+                }
+            },
+            .QuotedField => {
+                if (byte == '"') {
+                    state.fsm = .ExpectQuoteDelim;
+                } else {
+                    @branchHint(.likely);
+                    try state.fieldBuf.append(gpa, byte);
+                }
+            },
+            .ExpectQuoteDelim => {
+                if (byte == '"') {
+                    try state.fieldBuf.append(gpa, '"');
+                    state.fsm = .QuotedField;
+                } else if (byte == fl.delim or byte == '\n') {
+                    try state.printField(gpa, fl, sw, byte == '\n');
+                    state.fsm = .ExpectField;
+                }
+            },
         }
-        if (state.inQuotes or (byte != '\n' and byte != fl.delim)) {
-            @branchHint(.likely);
-            try state.fieldBuf.append(gpa, byte);
-            state.lastByte = byte;
-            continue;
-        }
-
-        // delim or newline, print field.
-        try state.printField(gpa, fl, sw, byte == '\n');
     }
 
     // There's some data left-over without a trailing newline, try to see if
@@ -159,5 +170,4 @@ fn executeFile(gpa: std.mem.Allocator, sw: *std.io.Writer, fl: flags.Flags, file
     if (state.colNum > 1 or state.fieldBuf.items.len > 0) {
         try state.printField(gpa, fl, sw, true);
     }
-    std.Thread.sleep(1e9 * 60);
 }

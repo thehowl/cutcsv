@@ -270,6 +270,9 @@ pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
     if (flags.files.items.len == 0) {
         try flags.files.append(alloc, try alloc.dupe(u8, "/dev/stdin"));
     }
+    if (flags.outDelim == null) {
+        flags.outDelim = &[1]u8{flags.delim};
+    }
 
     flags.verbose = false;
     success = true;

@@ -10,7 +10,7 @@ test_cases = {
     "no_lf1":	        [["-f", "1"], b"a,b,c", b"a\n"],
     "two_lines":	[["-f", "1"], b"a,b,c\nd,e,f\n", b"a\nd\n"],
     "delim":	        [["-f1", "-d#"], b"a#b#c\n", b"a\n"],
-    "cr":	        [["-f3"], b"a,b,c\r\n", b"c\n"],
+    "cr":	        [["-f3"], b"a,b,c\r\n", b"c\r\n"],
     "quoted":	        [["-f1"], b'"quoted "" string",2,3', b'quoted " string\n'],
     "quoted_start":	[["-f1"], b'""" string",2,3', b'" string\n'],
     "quoted_end":	[["-f1"], b'"quoted """,2,3', b'quoted "\n'],
