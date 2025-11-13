@@ -1,12 +1,12 @@
 stages:
-    - test
+  - test
 
 Test:
-    image: alpine:3
-    script:
-        - apk add --update --no-cache build-base python3 bash
-        - ./tool build
-        - mkdir -p ./tmp && TMPDIR=./tmp python3 test.py
-    artifacts:
-        paths:
-            - cutcsv
+  image: alpine:3
+  script:
+    - apk add --update --no-cache build-base python3 bash
+    - ./tool build
+    - mkdir -p ./tmp && TMPDIR=./tmp python3 test.py
+  artifacts:
+    paths:
+      - cutcsv

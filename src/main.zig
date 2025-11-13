@@ -34,7 +34,7 @@ pub fn main() !u8 {
 
 const readIter = struct {
     buf: [4096]u8 = undefined,
-    pos: u16 = 0,
+    pos: usize = 0,
     limit: u16 = 0,
     err: ?std.fs.File.ReadError = null,
     file: std.fs.File,
@@ -60,6 +60,23 @@ const readIter = struct {
         const byte = self.buf[self.pos];
         self.pos += 1;
         return byte;
+    }
+    // Consume until any of the bytes in `until` are found, or the buffer reaches
+    // the end. May return 0 bytes if a read is necessary.
+    // If a byte in `until` is found, it is not included in the returned slice.
+    fn consumeGreedy(self: *readIter, until: []const u8) ?[]u8 {
+        if (self.pos >= self.limit) {
+            return null;
+        }
+        const pos = std.mem.indexOfAny(u8, self.buf[self.pos..self.limit], until);
+        if (pos == null) {
+            self.pos = self.limit;
+            // always at least 1 byte returned
+            return self.buf[self.pos..self.limit];
+        }
+        const sl = self.buf[self.pos .. self.pos + pos.?];
+        self.pos += pos.?;
+        return if (sl.len > 0) sl else null;
     }
 };
 
@@ -90,6 +107,17 @@ const stateType = struct {
         }
         self.fieldBuf.len += 1;
         self.fieldBuf[self.fieldBuf.len - 1] = b;
+    }
+    fn fieldAppendMany(self: *stateType, gpa: std.mem.Allocator, bytes: []const u8) !void {
+        if ((self.fieldBuf.len + bytes.len) >= self.fieldBufCap) {
+            @branchHint(.unlikely);
+            const oldLen = self.fieldBuf.len;
+            const newCap = @max(self.fieldBufCap + 1024, self.fieldBuf.len + bytes.len);
+            self.fieldBuf = (try gpa.realloc(self.fieldBuf, newCap))[0..oldLen];
+            self.fieldBufCap = newCap;
+        }
+        self.fieldBuf.len += bytes.len;
+        @memcpy(self.fieldBuf[self.fieldBuf.len - bytes.len .. self.fieldBuf.len], bytes);
     }
 
     fn deinit(self: *stateType, gpa: std.mem.Allocator) void {
@@ -170,9 +198,15 @@ fn executeFile(gpa: std.mem.Allocator, sw: *std.io.Writer, fl: flags.Flags, file
             .ExpectField => {
                 if (byte == '"') {
                     state.fsm = .QuotedField;
+                    if (ri.consumeGreedy("\"")) |bytes| {
+                        try state.fieldAppendMany(gpa, bytes);
+                    }
                 } else {
                     try state.fieldAppend(gpa, byte);
                     state.fsm = .Field;
+                    if (ri.consumeGreedy(&[_]u8{ fl.delim, '\n' })) |bytes| {
+                        try state.fieldAppendMany(gpa, bytes);
+                    }
                 }
             },
             .ExpectQuoteDelim => {
