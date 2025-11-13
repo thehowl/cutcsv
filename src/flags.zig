@@ -2,6 +2,7 @@ const std = @import("std");
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
+const talloc = std.testing.allocator;
 
 /// FieldSpec is a specification of a field, or a range of fields, that should be printed in the result.
 pub const FieldSpec = union(enum) {
@@ -25,7 +26,7 @@ pub const Flags = struct {
 
     // delimiter to be used for output;
     // will default to delim if not specified.
-    outDelim: ?[]const u8 = null,
+    outDelim: ?[]u8 = null,
 
     // use verbose ouput.
     verbose: bool = false,
@@ -42,6 +43,9 @@ pub const Flags = struct {
     pub fn deinit(self: *Flags, allocator: std.mem.Allocator) void {
         for (self.files.items) |file| allocator.free(file);
         for (self.fields.items) |field| if (field == .column) allocator.free(field.column);
+        if (self.outDelim) |outDelim| {
+            allocator.free(outDelim);
+        }
         self.files.deinit(allocator);
         self.fields.deinit(allocator);
     }
@@ -56,15 +60,15 @@ pub fn writeUsage(writer: *std.Io.Writer, name: []const u8, version: []const u8)
         \\Select one or more fields using -c and/or -f. At least one must be selected.
         \\With no FILE, or when FILE is -, read standard input.
         \\
-        \\    -f <LIST>   Print the specified comma-separated list of fields or ranges
-        \\    -c <COLUMN> Select fields whose column name (value of the first line)
-        \\                matches COLUMN.
-        \\    -d <CHAR>   Use CHAR as a delimiter (defaults to ',')
-        \\    -D <STRING> Use STRING as the output separator (in case of multiple fields).
-        \\                Defaults to the input delimiter.
-        \\    -r          Skip one row from the top of the file (header).
-        \\    -h          Show this help message.
-        \\    -v          Be verbose
+        \\  -f <LIST>   Print the specified comma-separated list of fields or ranges
+        \\  -c <COLUMN> Select fields whose column name (value of the first line)
+        \\              matches COLUMN.
+        \\  -d <CHAR>   Use CHAR as a delimiter (defaults to ',')
+        \\  -D <STRING> Use STRING as the output separator (in case of multiple fields).
+        \\              Defaults to the input delimiter.
+        \\  -r          Skip one row from the top of the file (header).
+        \\  -h          Show this help message.
+        \\  -v          Be verbose
         \\
         \\Each LIST is made up of one range, or many ranges separated by commas,
         \\in a similar fashion to the UNIX 'cut' program.
@@ -189,7 +193,7 @@ pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
     var parsingFiles = false;
 
     while (args.next()) |arg| {
-        defer pos += 1;
+        pos += 1;
 
         if (arg.len == 0) {
             return .{ .Err = .{ .Empty = .{ .position = pos } } };
@@ -246,8 +250,16 @@ pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
                     }
                     flags.delim = delim[0];
                 },
-                'D' => flags.outDelim = flagArg(&toConsume, args) catch |err| switch (err) {
-                    error.NoFlagArg => return .{ .Err = .{ .NoFlagArg = 'D' } },
+                'D' => {
+                    const outDelimArg = flagArg(&toConsume, args) catch |err| switch (err) {
+                        error.NoFlagArg => return .{ .Err = .{ .NoFlagArg = 'D' } },
+                    };
+                    if (flags.outDelim) |existingOutDelim| {
+                        flags.outDelim = try alloc.realloc(existingOutDelim, outDelimArg.len);
+                        @memcpy(flags.outDelim.?, outDelimArg);
+                    } else {
+                        flags.outDelim = try alloc.dupe(u8, outDelimArg);
+                    }
                 },
 
                 'h' => return .{ .Err = .HelpWanted },
@@ -264,28 +276,27 @@ pub fn parseArgs(alloc: std.mem.Allocator, args: anytype) !ParseArgsResult {
         }
     }
 
-    if (pos == 0) {
+    if (flags.fields.items.len == 0) {
         return .{ .Err = .NoFieldSpecProvided };
     }
     if (flags.files.items.len == 0) {
         try flags.files.append(alloc, try alloc.dupe(u8, "/dev/stdin"));
     }
     if (flags.outDelim == null) {
-        flags.outDelim = &[1]u8{flags.delim};
+        flags.outDelim = try alloc.dupe(u8, (&[_]u8{ flags.delim, 0 })[0..1]);
     }
 
-    flags.verbose = false;
     success = true;
     return .{ .Ok = flags };
 }
 
 const testArgIterator = std.process.ArgIteratorGeneral(.{ .single_quotes = true });
 
-fn testParseArgs(input: []const u8) !ParseArgsResult {
-    const alloc = std.testing.allocator;
+fn testParseArgs(comptime input: []const u8) !ParseArgsResult {
+    const alloc = talloc;
     var argIterator = try testArgIterator.init(
         alloc,
-        input,
+        "cutcsv " ++ input,
     );
     defer argIterator.deinit();
     return parseArgs(alloc, &argIterator);
@@ -293,12 +304,17 @@ fn testParseArgs(input: []const u8) !ParseArgsResult {
 
 test "field spec" {
     var result = try testParseArgs("-f1-3");
-    defer result.deinit(std.testing.allocator);
-    try expect(result == .Ok);
+    defer result.deinit(talloc);
+    expect(result == .Ok) catch |err| {
+        std.debug.print("Result: {f}\n", .{result.Err});
+        return err;
+    };
 
-    var flags = try Flags.init(std.testing.allocator);
-    defer flags.deinit(std.testing.allocator);
-    try flags.fields.append(std.testing.allocator, FieldSpec{ .range = .{ .min = 1, .max = 3 } });
+    var flags = try Flags.init(talloc);
+    defer flags.deinit(talloc);
+    try flags.fields.append(talloc, FieldSpec{ .range = .{ .min = 1, .max = 3 } });
+    try flags.files.append(talloc, try talloc.dupe(u8, "/dev/stdin"));
+    flags.outDelim = try talloc.dupe(u8, ",");
 
     try std.testing.expectEqualDeep(ParseArgsResult{
         .Ok = flags,
@@ -307,14 +323,88 @@ test "field spec" {
 
 test "column field spec" {
     var result = try testParseArgs("-chello");
-    defer result.deinit(std.testing.allocator);
-    try expect(result == .Ok);
+    defer result.deinit(talloc);
+    expect(result == .Ok) catch |err| {
+        std.debug.print("Result: {f}\n", .{result.Err});
+        return err;
+    };
 
-    var flags = try Flags.init(std.testing.allocator);
-    defer flags.deinit(std.testing.allocator);
-    try flags.fields.append(std.testing.allocator, FieldSpec{
-        .column = try std.testing.allocator.dupe(u8, "hello"),
+    var flags = try Flags.init(talloc);
+    defer flags.deinit(talloc);
+    try flags.fields.append(talloc, FieldSpec{
+        .column = try talloc.dupe(u8, "hello"),
     });
+    try flags.files.append(talloc, try talloc.dupe(u8, "/dev/stdin"));
+    flags.outDelim = try talloc.dupe(u8, ",");
+
+    try std.testing.expectEqualDeep(ParseArgsResult{
+        .Ok = flags,
+    }, result);
+}
+
+test "all together" {
+    var result = try testParseArgs("-chello -f1,2-,-5,111-112 -d, -DNOWAY -v -r");
+    defer result.deinit(talloc);
+    expect(result == .Ok) catch |err| {
+        std.debug.print("Result: {f}\n", .{result.Err});
+        return err;
+    };
+
+    var flags = try Flags.init(talloc);
+    defer flags.deinit(talloc);
+    try flags.files.append(talloc, try talloc.dupe(u8, "/dev/stdin"));
+    try flags.fields.appendSlice(talloc, &[_]FieldSpec{
+        .{
+            .column = try talloc.dupe(u8, "hello"),
+        },
+        .{ .range = .{ .min = 1, .max = 1 } },
+        .{ .range = .{ .min = 2, .max = null } },
+        .{ .range = .{ .min = null, .max = 5 } },
+        .{ .range = .{ .min = 111, .max = 112 } },
+    });
+    flags.delim = ',';
+    flags.outDelim = try talloc.dupe(u8, "NOWAY");
+    flags.verbose = true;
+    flags.skipRows = 1;
+
+    try std.testing.expectEqualDeep(ParseArgsResult{
+        .Ok = flags,
+    }, result);
+}
+
+test "default outDelim" {
+    var result = try testParseArgs("-f1 -d. one");
+    defer result.deinit(talloc);
+    expect(result == .Ok) catch |err| {
+        std.debug.print("Result: {f}\n", .{result.Err});
+        return err;
+    };
+
+    var flags = try Flags.init(talloc);
+    defer flags.deinit(talloc);
+    try flags.files.append(talloc, try talloc.dupe(u8, "one"));
+    try flags.fields.append(talloc, .{ .range = .{ .min = 1, .max = 1 } });
+    flags.delim = '.';
+    flags.outDelim = try talloc.dupe(u8, ".");
+
+    try std.testing.expectEqualDeep(ParseArgsResult{
+        .Ok = flags,
+    }, result);
+}
+
+test "multiple outDelim" {
+    var result = try testParseArgs("-f1 -Dwhat -Dthe -Dhell one");
+    defer result.deinit(talloc);
+    expect(result == .Ok) catch |err| {
+        std.debug.print("Result: {f}\n", .{result.Err});
+        return err;
+    };
+
+    var flags = try Flags.init(talloc);
+    defer flags.deinit(talloc);
+    try flags.files.append(talloc, try talloc.dupe(u8, "one"));
+    try flags.fields.append(talloc, .{ .range = .{ .min = 1, .max = 1 } });
+    flags.outDelim = try talloc.dupe(u8, "hell");
 
     try std.testing.expectEqualDeep(ParseArgsResult{
         .Ok = flags,
@@ -322,35 +412,34 @@ test "column field spec" {
 }
 
 test "with files" {
-    var result = try testParseArgs("one two three");
-    defer result.deinit(std.testing.allocator);
+    var result = try testParseArgs("-f1 one two three");
+    defer result.deinit(talloc);
     try expect(result == .Ok);
 
-    const alloc: std.mem.Allocator = std.testing.allocator;
-
-    var flags = try Flags.init(alloc);
-    defer flags.deinit(alloc);
-    try flags.files.appendSlice(alloc, &[_][]u8{
-        try alloc.dupe(u8, "one"),
-        try alloc.dupe(u8, "two"),
-        try alloc.dupe(u8, "three"),
+    var flags = try Flags.init(talloc);
+    defer flags.deinit(talloc);
+    try flags.files.appendSlice(talloc, &[_][]u8{
+        try talloc.dupe(u8, "one"),
+        try talloc.dupe(u8, "two"),
+        try talloc.dupe(u8, "three"),
     });
+    try flags.fields.append(talloc, .{ .range = .{ .min = 1, .max = 1 } });
 }
 
 test "error: help" {
     var result = try testParseArgs("-h");
-    defer result.deinit(std.testing.allocator);
+    defer result.deinit(talloc);
     try expect(result.Err == .HelpWanted);
 }
 
 test "error: empty argument" {
     var result = try testParseArgs("''");
-    defer result.deinit(std.testing.allocator);
-    try expect(result.Err.Empty.position == 0);
+    defer result.deinit(talloc);
+    try expect(result.Err.Empty.position == 1);
 }
 
 test "error: empty argument in second position" {
     var result = try testParseArgs("sas ''");
-    defer result.deinit(std.testing.allocator);
-    try expectEqual(1, result.Err.Empty.position);
+    defer result.deinit(talloc);
+    try expectEqual(2, result.Err.Empty.position);
 }

@@ -185,6 +185,9 @@ fn executeFile(gpa: std.mem.Allocator, sw: *std.io.Writer, fl: flags.Flags, file
                 } else {
                     @branchHint(.likely);
                     try state.fieldAppend(gpa, byte);
+                    if (ri.consumeGreedy(&[_]u8{ fl.delim, '\n' })) |bytes| {
+                        try state.fieldAppendMany(gpa, bytes);
+                    }
                 }
             },
             .QuotedField => {
@@ -193,6 +196,9 @@ fn executeFile(gpa: std.mem.Allocator, sw: *std.io.Writer, fl: flags.Flags, file
                 } else {
                     @branchHint(.likely);
                     try state.fieldAppend(gpa, byte);
+                    if (ri.consumeGreedy("\"")) |bytes| {
+                        try state.fieldAppendMany(gpa, bytes);
+                    }
                 }
             },
             .ExpectField => {
@@ -213,9 +219,14 @@ fn executeFile(gpa: std.mem.Allocator, sw: *std.io.Writer, fl: flags.Flags, file
                 if (byte == '"') {
                     try state.fieldAppend(gpa, '"');
                     state.fsm = .QuotedField;
+                    if (ri.consumeGreedy("\"")) |bytes| {
+                        try state.fieldAppendMany(gpa, bytes);
+                    }
                 } else if (byte == fl.delim or byte == '\n') {
                     try state.printField(gpa, fl, sw, byte == '\n');
                     state.fsm = .ExpectField;
+                } else {
+                    return executeFileError.InvalidCSV;
                 }
             },
         }
